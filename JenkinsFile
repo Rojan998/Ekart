@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+    tools{
+        maven 'maven3_tool'
+        jdk 'jdk17'
+    }
+    
+    environment{
+        SCANNER_HOME= tool 'sonar_scanner_tool'
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Rojan998/Ekart.git'
+            }
+        }
+        stage('Compile') {
+            steps {
+                sh 'mvn compile'
+            }
+        }
+        
+        stage('Unit Tests') {
+            steps {
+                sh 'mvn test -DskipTests=true'
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonarqube') { // This is from the manageJenkins > systems > 
+                sh '''
+                $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectKey=EKART -Dsonar.projectName=EKART -Dsonar.java.binaries=.
+                '''
+                }
+            }
+        }
+        stage('OWASP Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: ' --scan ./', odcInstallation: 'dependency_check_tool'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml\''
+                }
+            }
+        
+        stage('Build') {
+            steps {
+                sh "mvn package -DskipTests=true"
+            }
+        }
+        
+        
+        stage('Deploy to Nexus') {
+            steps {
+                withMaven(globalMavenSettingsConfig: 'global_maven', jdk: 'jdk17', maven: 'maven3_tool', mavenSettingsConfig: '', traceability: true) {
+                    sh "mvn clean deploy -DskipTests=true"
+                }
+            }
+        }
+        stage('Docker Build and Tag') {
+            steps {
+                script{
+                       withDockerRegistry(credentialsId: 'dockerhub-cred') {
+                            sh "docker build -t rojan998/ekart:latest -f docker/Dockerfile ."
+                            }
+                        }
+                }
+           
+        }
+        
+        stage('Docker Push ') {
+            steps {
+                script{
+                       withDockerRegistry(credentialsId: 'dockerhub-cred') {
+                            sh "docker push rojan998/ekart:latest"
+                            }
+                        }
+                }
+           
+        }
+        
+        
+        stage('Hello ROjan') {
+            steps {
+                echo "Hi Rojan"
+            }
+        }
+        
+    }
+}
